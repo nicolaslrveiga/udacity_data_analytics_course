@@ -1,0 +1,477 @@
+---
+title: "Data visualization final project"
+output: html_document
+---
+
+# Airline On-Time Statistics and Delay Causes
+
+### Summary
+The goal of this notebook is to illustrate the analyses that is going to be done prior to the final visualization created using D3 for the final project from Data Visualization course. In this notebook we are going to explore the dataset from Airline On-Time Statistics and  Delay Causes and derive from it a history that we want to tell with the data we have.
+
+### Introduction
+The U.S. Department of Transportation's (DOT) Bureau of Transportation Statistics (BTS) tracks the on-time performance of domestic flights operated by large air carriers. Summary information on the number of on-time, delayed, canceled and diverted flights appears in DOT's monthly Air Travel Consumer Report, published about 30 days after the month's end, as well as in summary tables posted on the [website](https://www.transtats.bts.gov/OT_Delay/OT_DelayCause1.asp). BTS began collecting details on the causes of flight delays in June 2003. Summary statistics and raw data are made available to the public at the time the Air Travel Consumer Report is released.
+
+For the project I am going to be using the data from [source](http://stat-computing.org/dataexpo/2009/the-data.html). The data comes originally from [RITA](https://www.transtats.bts.gov/OT_Delay/OT_DelayCause1.asp). The files from this source have derivable variables removed, are packaged in yearly chunks and have been more heavily compressed than the originals.
+
+This document is divided into Data Exploration, where we are going to explore the variables in the data and with some statistics have a deep understand of it. The final section, data modeling, is going to be based on the information from data exploration section, in this section we are going to transform the data in a way that is going to help us tell our history.
+
+### Data exploration
+
+First of all if you want to run this code, you need to go by two steps:
+  1- Download all datasets from http://stat-computing.org/dataexpo/2009/the-data.html, all files from 1987 to 2008 have to be in one folder. For instance I placed my on C:/Users/nicol/jupytyer_workspace/p7/final_project/data.
+  2 - set the variable below called absolute_path with the path where you placed the data from step 1.
+  
+  
+```{r}
+absolute_path <- "C:/Users/nicol/jupytyer_workspace/p7/final_project/data"
+```
+
+In this section we are going to explore the dataset, the data is divided into multiple files, first step is going to be to load this data and see if they are constant.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+#The flags above to indicate that the code should not come in the HTML, messages
+#and warnings are going to be suppressed. Loading packages that are going to be 
+#used.
+
+library(ggplot2)
+library(psych)
+library(GGally)
+library(scales)
+library(memisc)
+library(data.table)
+library(reshape)
+library(dplyr)
+```
+
+Loading one file to see with variables we have.
+
+```{r}
+setwd(absolute_path)
+database <- fread("2001.csv")
+head(database)
+```
+
+Some statistics about the data:
+```{r}
+summary(database)
+```
+
+Variable descriptions
+Name	Description
+
+1	Year	1987-2008
+2	Month	1-12
+3	DayofMonth	1-31
+4	DayOfWeek	1 (Monday) - 7 (Sunday)
+5	DepTime	actual departure time (local, hhmm)
+6	CRSDepTime	scheduled departure time (local, hhmm)
+7	ArrTime	actual arrival time (local, hhmm)
+8	CRSArrTime	scheduled arrival time (local, hhmm)
+9	UniqueCarrier	unique carrier code
+10	FlightNum	flight number
+11	TailNum	plane tail number
+12	ActualElapsedTime	in minutes
+13	CRSElapsedTime	in minutes
+14	AirTime	in minutes
+15	ArrDelay	arrival delay, in minutes
+16	DepDelay	departure delay, in minutes
+17	Origin	origin IATA airport code
+18	Dest	destination IATA airport code
+19	Distance	in miles
+20	TaxiIn	taxi in time, in minutes
+21	TaxiOut	taxi out time in minutes
+22	Cancelled	was the flight cancelled?
+23	CancellationCode	reason for cancellation (A = carrier, B = weather, C = NAS, D = security)
+24	Diverted	1 = yes, 0 = no
+25	CarrierDelay	in minutes
+26	WeatherDelay	in minutes
+27	NASDelay	in minutes
+28	SecurityDelay	in minutes
+29	LateAircraftDelay	in minutes
+
+Counting how many flighs we had each year.
+```{r echo=FALSE, message=FALSE, warning=FALSE, results="hide"}
+# Loading data
+setwd(absolute_path)
+years <- seq.int(1987, 2008)
+number_of_elements <- array(dim = length(years))
+
+i = 1
+for(year in years){
+  path = paste(getwd(), year, sep="/")
+  path = paste(path, "csv", sep=".")
+  database <- fread(path)
+  number_of_elements[i] <- nrow(database)
+  i = i + 1
+}
+```
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = number_of_elements)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) + 
+  ggtitle("number of flights by year") + 
+  ylab("number of flights") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The graph number of elements by year shows that there is a increase in the number of flights with time. Also other two aspects of the chart draw my attention, 1987 has much less flights than the rest and also in 2002 we had a reduction in the number of flights. That may be two aspects of the chart that we want to explore.
+
+Accumulating each variable per year. We are going to sum each variable per year and plot it to investigate the patterns.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results="hide"}
+setwd(absolute_path)
+
+mean_actual_elapsed_time <- array(dim = length(years))
+mean_air_time <- array(dim = length(years))
+mean_arr_delay <- array(dim = length(years))
+mean_dep_delay <- array(dim = length(years))
+mean_tax_in <- array(dim = length(years))
+mean_tax_out <- array(dim = length(years))
+count_cancelled <- array(dim = length(years))
+count_cancelled_a <- array(dim = length(years))
+count_cancelled_b <- array(dim = length(years))
+count_cancelled_c <- array(dim = length(years))
+count_cancelled_d <- array(dim = length(years))
+count_diverted <- array(dim = length(years))
+mean_carrier_delay <- array(dim = length(years))
+mean_Weather_delay <- array(dim = length(years))
+mean_NAS_delay <- array(dim = length(years))
+mean_security_delay <- array(dim = length(years))
+mean_late_aircraft_delay <- array(dim = length(years))
+
+i = 1
+for(year in years){
+  path = paste(getwd(), year, sep="/")
+  path = paste(path, "csv", sep=".")
+  database <- fread(path)
+  database[is.na(database)] <- 0
+  
+  mean_actual_elapsed_time[i] = mean(database$ActualElapsedTime)
+  mean_air_time[i] = mean(database$AirTime)
+  mean_arr_delay[i] = mean(database$ArrDelay)
+  mean_dep_delay[i] = mean(database$DepDelay)
+  mean_tax_in[i] = mean(database$TaxiIn)
+  mean_tax_out[i] = mean(database$TaxiOut)
+  count_cancelled[i] = sum(database$Cancelled)
+  count_cancelled_a[i] = nrow(database[database$CancellationCode == "A"])
+  count_cancelled_b[i] = nrow(database[database$CancellationCode == "B"])
+  count_cancelled_c[i] = nrow(database[database$CancellationCode == "C"])
+  count_cancelled_d[i] = nrow(database[database$CancellationCode == "D"])
+  count_diverted[i] = sum(database$Diverted)
+  mean_carrier_delay[i] = mean(database$CarrierDelay)
+  mean_Weather_delay[i] = mean(database$WeatherDelay)
+  mean_NAS_delay[i] = mean(database$NASDelay)
+  mean_security_delay[i] = mean(database$SecurityDelay)
+  mean_late_aircraft_delay[i] = mean(database$LateAircraftDelay)
+  
+  i = i + 1
+}
+```
+#### mean actual elapsed time
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_actual_elapsed_time)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) + 
+  ggtitle("mean actual elapsed time by year") +
+  ylab("mean actual elapsed time") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+mean actual elapsed time by year increases over time. That is a counter intuitive in the way that with the years go by, the tecnology improves and the time should decrease, but it can also be explained by the increase of time delays or increase of number of flights with long duration.
+
+#### Mean air time
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_air_time)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean air time by year") +
+  ylab("mean air time") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Mean air time is basically constant over the years, that means the increase in the actual elased time is not duo to increase on the duration of the flights, but because of delays.
+
+#### mean arrival delay
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_arr_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean arr delat by year") +
+  ylab("mean arr delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Mean arrival delay varies a lot over the years, but it varies in a small range of less than 10 minutes, it does not appears to impact anything.
+
+#### Mean departure delay
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_dep_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean dep delay by year") +
+  ylab("mean dep delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#### Mean tax in
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_tax_in)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean tax in by year") + 
+  ylab("mean tax in") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+It increases a little over the years, the explanation may be that with the increase of the number of flights, we also had a increase in the number of aircrafts and
+that cause a increase in the mean time of tax in.
+
+#### Mean tax out
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_tax_out)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean tax out by year") +
+  ylab("mean tax out") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Mean tax out also presented a increase over time, the reasan may be the same as for tax in.
+
+#### number of flights cancelled 
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = count_cancelled)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("count cancelled by year") +
+  ylab("count cancelled") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Count cancelled by year increase from 1987 until 2001 when we have a decrease in the number of flights cancelled. This variable is a good one to explore, we could explore what happened in 2001 that created this pattern.
+
+#### number of flights cancelled in categories
+
+Number of flights cancelled is also divided in 4 categories depending on what reason the flight was cancelled.
+
+```{r}
+carrier <- count_cancelled_a
+weather <- count_cancelled_b
+NAS <- count_cancelled_c
+security <- count_cancelled_d
+count_cancelled_df <- data.frame(years, carrier, weather, NAS, security)
+count_cancelled_df <- melt(count_cancelled_df, id=c("years"))
+ggplot(data=subset(count_cancelled_df, count_cancelled_df$years >= 2003), aes(x=years, y=value, fill=variable)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(x = "year", y = "count cancelled", aesthetic='custom text') +
+  scale_fill_brewer(palette="Paired") +
+  guides(fill=guide_legend(title="Reason for cancellation")) +
+  theme_minimal() +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 6)) +
+  ggtitle("count cancelled by year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+From the chart number of flights cancelled by year, we can see that between 2003 and 2008 the number of flights cancelled increases, this pattern can also be seen here.
+
+#### Mean carrier delay by year
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_carrier_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean carrier delay by year") +
+  ylab("mean carrier delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+We only have data from 2003 until 2007 for carrier delay, we notice that mean carrier delay increases from 2003 to 2007 and decreases in 2008.
+
+#### Mean weather delay
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_Weather_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean weather delay by year") +
+  ylab("mean weather delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+We only have data from 2003 until 2007 for weather delay, we notice that mean weather delay increases from 2003 to 2004 and gets contant from there.
+
+#### Mean NAS delay
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_NAS_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean NAS delay by year") +
+  ylab("mean NAS delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+We only have data from 2003 until 2007 for NAS delay, we notice that mean weather delay increases from 2003 to 2007.
+
+#### Mean security delay
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_security_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean security delay by year") +
+  ylab("mean security delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Mean security delay by year have data from 2003 until 2007. This variable does not seen to have a pattern, it bounces up and down each year.
+
+#### Mean late aircraft delay
+
+```{r}
+ggplot() + 
+  geom_line(aes(x = years, y = mean_late_aircraft_delay)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("mean late aircraft delay by year") +
+  ylab("mean late aircraft delay") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Mean late aircraft delay by year have data from 2003 until 2007. This variable increases from 2003 to 2007 and than decrease on 2008.
+
+#### number of flights by number of cancelations
+
+The two variables that I want to focus are number of flights and number of flights cancellation. The first present an always increasing pattern and the second has a dip in 2001 that we can explore. Instead of using both variables I am going to divide one by the other see if the ratio presents a shape that we can use to tell a history.
+
+```{r}
+#Dividing number of flights by number of flights cancelled.
+ratio_num_elem_by_cancelation = number_of_elements / count_cancelled
+```
+
+```{r}
+#Plotting ratio number of flights by number of cancellations by year.
+ggplot() + 
+  geom_line(aes(x = years, y = ratio_num_elem_by_cancelation)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  ggtitle("ratio number of flights by number of cancelations by year") +
+  ylab("ratio number of flights by number of cancelations") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+From the graph, high values mean that we have lower values of flight cancellation and high values of number of flights. That is not a good chart because it takes away the notion that we had for each variable.
+
+
+### Transforming the data
+In this section we are going to transform the original dataset. We are going to create another dataset with the variables that we are using in our visualization, the variables that we are using are number of cancelations and number of flights. Since we want to show the increase in the number of flights and also we want to explore 2001 to see what happened that made the number of flights to decrease, we are going to group the number of flights and number of cancellations by month and day.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results="hide"}
+#Setting path
+setwd(absolute_path)
+
+#Initializing database
+data_by_day_db = data.frame(Month=numeric(0),
+                            DayofMonth=numeric(0),
+                            year=numeric(0),
+                            sum=numeric(0),
+                            n=numeric(0))
+
+#For each file
+for(year in years){
+  path = paste(getwd(), year, sep="/")
+  path = paste(path, "csv", sep=".")
+  database <- fread(path)
+  
+  #Group by Month and DayofMonth
+  data_by_day <- database %>%
+  group_by(Month, DayofMonth) %>%
+  summarise(year = year, sum=sum(Cancelled), n = n())
+  
+  #Add each line of the grouping to our new database
+  for(i in 1:nrow(data_by_day)){
+    row <- data_by_day[i,]
+    data_by_day_db <- rbind(data_by_day_db, c(row$Month, row$DayofMonth, row$year, row$sum, row$n))
+  }
+}
+```
+
+```{r}
+#Renaming collums
+colnames(data_by_day_db)[1] <- "Month"
+colnames(data_by_day_db)[2] <- "DayofMonth"
+colnames(data_by_day_db)[3] <- "year"
+colnames(data_by_day_db)[4] <- "sum"
+colnames(data_by_day_db)[5] <- "n"
+head(data_by_day_db)
+```
+
+```{r}
+#Saving to disk
+setwd(absolute_path)
+write.csv(data_by_day_db, "format_data.csv")
+```
+
+#### Exploring 2001
+
+Based on the data that we are going to focus, the only variable that we still need to explore is the number of cancellations for the year of 2001. Sice we already have the data grouped by monty and day, we can plot each month.
+
+```{r}
+#plotting number of cancellations by month for the year 2001.
+ggplot(data=subset(data_by_day_db, data_by_day_db$year == 2001), aes(x=DayofMonth, y=sum)) +
+  geom_line() + 
+  facet_grid(. ~ Month) +
+  ggtitle("number of cancellations by month of 2001") +
+  ylab("number of cancellations") +
+  xlab("day") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 2))
+  
+```
+
+We can notice that there is a pick in the number of flight cancelation in september.
+
+```{r}
+#plotting number of cancellations by month for the year 2001.
+ggplot(data=subset(data_by_day_db,
+            data_by_day_db$year == 2001 & data_by_day_db$Month == 9),
+            aes(x=DayofMonth, y=sum)) +
+  geom_line() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 30)) +
+  ggtitle("September 2001") +
+  xlab("day") +
+  ylab("number of flights cancelled") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+From these last two graphs we can see that 9/11 was a critical event to what happened with the number of flight cancellations.
+
+### Conclusion
+
+The goal of this document was to explore the data and come up with a history that we want to present in our visualization. We start by looking at each variable and pointing what we could further explore. 
+
+In the last section, we already had a idea of what we wanted to show, that is the increase in the number of flights, increase in flights cancellations and the year of 2001. With that we put together another dataset with data from the original dataset, in this new dataset we only had information grouped in a format that we could explore, that is the data grouped in months and days.
+
+Also in this last section we did a deeper analises of 2001 and we find out that 9/11 was a critical day for the number of flights cancelled.
+
+The history that we are going to present is the increase of flights and cancellations over the years with a focus in what happened around 9/11.
